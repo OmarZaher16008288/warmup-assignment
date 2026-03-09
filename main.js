@@ -110,24 +110,23 @@ function getShiftDuration(startTime, endTime) {
 // ============================================================
 function getIdleTime(startTime, endTime) {
     const startSec = parseTimeToSeconds(startTime);
-    const endSec = parseTimeToSeconds(endTime);
+    const endSec   = parseTimeToSeconds(endTime);
 
-    const deliveryStart = 8 * 3600;   // 8:00 AM in seconds
-    const deliveryEnd = 22 * 3600;    // 10:00 PM in seconds
+    const DELIVERY_START = 8  * 3600;   // 08:00:00
+    const DELIVERY_END   = 22 * 3600;   // 22:00:00
 
+    // Idle time BEFORE 8 AM
     let idleBefore = 0;
-    let idleAfter = 0;
-
-    // Idle before delivery hours
-    if (startSec < deliveryStart) {
-        idleBefore = Math.min(deliveryStart, endSec) - startSec;
-        if (idleBefore < 0) idleBefore = 0;
+    if (startSec < DELIVERY_START) {
+        const earlyEnd = Math.min(DELIVERY_START, endSec);
+        idleBefore = Math.max(0, earlyEnd - startSec);
     }
 
-    // Idle after delivery hours
-    if (endSec > deliveryEnd) {
-        idleAfter = endSec - Math.max(deliveryEnd, startSec);
-        if (idleAfter < 0) idleAfter = 0;
+    // Idle time AFTER 10 PM
+    let idleAfter = 0;
+    if (endSec > DELIVERY_END) {
+        const lateStart = Math.max(DELIVERY_END, startSec);
+        idleAfter = Math.max(0, endSec - lateStart);
     }
 
     return formatDuration(idleBefore + idleAfter);
@@ -140,8 +139,8 @@ function getIdleTime(startTime, endTime) {
 // Returns: string formatted as h:mm:ss
 function getActiveTime(shiftDuration, idleTime) {
     const shiftSec = parseDurationToSeconds(shiftDuration);
-    const idleSec = parseDurationToSeconds(idleTime);
-    return formatDuration(shiftSec - idleSec);
+    const idleSec  = parseDurationToSeconds(idleTime);
+    return formatDuration(Math.max(0, shiftSec - idleSec));
 }
 // ============================================================
 // Function 4: metQuota(date, activeTime)
@@ -151,21 +150,7 @@ function getActiveTime(shiftDuration, idleTime) {
 // ============================================================
 function metQuota(date, activeTime) {
     const activeSec = parseDurationToSeconds(activeTime);
-
-    // Check if date is within Eid al-Fitr period: April 10–30, 2025
-    const d = new Date(date);
-    const year = d.getFullYear();
-    const month = d.getMonth() + 1; // 1-indexed
-    const day = d.getDate();
-
-    let quotaSec;
-    if (year === 2025 && month === 4 && day >= 10 && day <= 30) {
-        quotaSec = 6 * 3600; // 6 hours
-    } else {
-        quotaSec = 8 * 3600 + 24 * 60; // 8 hours 24 minutes
-    }
-
-    return activeSec >= quotaSec;
+    return activeSec >= quotaForDate(date);
 }
 // ============================================================
 // Function 5: addShiftRecord(textFile, shiftObj)
