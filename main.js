@@ -160,65 +160,72 @@ function metQuota(date, activeTime) {
 // ============================================================
 function addShiftRecord(textFile, shiftObj) {
     const { driverID, driverName, date, startTime, endTime } = shiftObj;
+    const startTrimmed = startTime.trim();
+    const endTrimmed   = endTime.trim();
 
-    let fileContent = "";
+    // Read existing file content (preserve raw for safety)
+    let rawContent = "";
     try {
-        fileContent = fs.readFileSync(textFile, { encoding: "utf8" });
+        rawContent = fs.readFileSync(textFile, { encoding: "utf8" });
     } catch (e) {
-        fileContent = "";
+        rawContent = "";
     }
 
-    const lines = fileContent.split("\n").filter(l => l.trim() !== "");
+    const lines = rawContent.split("\n").filter(l => l.trim() !== "");
 
-    // Check for duplicate (same driverID and date)
+    // Duplicate check: same driverID AND same date
     for (const line of lines) {
-        const cols = line.split(",").map(c => c.trim());
+        const cols = parseLine(line);
         if (cols[0] === driverID && cols[2] === date) {
             return {};
         }
     }
 
-    // Calculate fields
-    const shiftDuration = getShiftDuration(startTime, endTime);
-    const idleTime = getIdleTime(startTime, endTime);
-    const activeTime = getActiveTime(shiftDuration, idleTime);
-    const quota = metQuota(date, activeTime);
-    const hasBonus = false;
+    // Compute derived fields
+    const shiftDuration = getShiftDuration(startTrimmed, endTrimmed);
+    const idleTime      = getIdleTime(startTrimmed, endTrimmed);
+    const activeTime    = getActiveTime(shiftDuration, idleTime);
+    const quota         = metQuota(date, activeTime);
+    const hasBonus      = false;
 
+    // Return object
     const newRecord = {
         driverID,
         driverName,
         date,
-        startTime: startTime.trim(),
-        endTime: endTime.trim(),
+        startTime:     startTrimmed,
+        endTime:       endTrimmed,
         shiftDuration,
         idleTime,
         activeTime,
-        metQuota: quota,
+        metQuota:      quota,
         hasBonus
     };
 
-    const newLine = `${driverID},${driverName},${date},${startTime.trim()},${endTime.trim()},${shiftDuration},${idleTime},${activeTime},${quota},${hasBonus}`;
+    // Text line to append / insert
+    const newLine = [
+        driverID, driverName, date,
+        startTrimmed, endTrimmed,
+        shiftDuration, idleTime, activeTime,
+        quota, hasBonus
+    ].join(",");
 
-    // Find where to insert: after the last record of this driverID, or at the end
-    let lastIndexOfDriver = -1;
+    // Insert after the LAST existing record of this driverID,
+    // or at the very end if the driver is new.
+    let lastIdx = -1;
     for (let i = 0; i < lines.length; i++) {
-        const cols = lines[i].split(",").map(c => c.trim());
-        if (cols[0] === driverID) {
-            lastIndexOfDriver = i;
+        if (parseLine(lines[i])[0] === driverID) {
+            lastIdx = i;
         }
     }
 
-    if (lastIndexOfDriver === -1) {
-        // driverID not found, append at end
+    if (lastIdx === -1) {
         lines.push(newLine);
     } else {
-        // Insert after last record of this driverID
-        lines.splice(lastIndexOfDriver + 1, 0, newLine);
+        lines.splice(lastIdx + 1, 0, newLine);
     }
 
     fs.writeFileSync(textFile, lines.join("\n") + "\n", { encoding: "utf8" });
-
     return newRecord;
 }
 
@@ -232,12 +239,12 @@ function addShiftRecord(textFile, shiftObj) {
 // Returns: nothing (void)
 // ============================================================
 function setBonus(textFile, driverID, date, newValue) {
-    let fileContent = fs.readFileSync(textFile, { encoding: "utf8" });
-    const lines = fileContent.split("\n");
+    const rawContent = fs.readFileSync(textFile, { encoding: "utf8" });
+    const lines = rawContent.split("\n");
 
-    const updatedLines = lines.map(line => {
+    const updated = lines.map(line => {
         if (line.trim() === "") return line;
-        const cols = line.split(",").map(c => c.trim());
+        const cols = parseLine(line);
         if (cols[0] === driverID && cols[2] === date) {
             cols[9] = String(newValue);
             return cols.join(",");
@@ -245,7 +252,7 @@ function setBonus(textFile, driverID, date, newValue) {
         return line;
     });
 
-    fs.writeFileSync(textFile, updatedLines.join("\n"), { encoding: "utf8" });
+    fs.writeFileSync(textFile, updated.join("\n"), { encoding: "utf8" });
 }
 
 // ============================================================
