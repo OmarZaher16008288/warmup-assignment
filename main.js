@@ -1,44 +1,94 @@
 const fs = require("fs");
 
-// Helper: parse "hh:mm:ss am/pm" to total seconds
+/**
+ * Parse "h:mm:ss am" or "hh:mm:ss pm" (any surrounding whitespace,
+ * period in any case) into total seconds since midnight.
+ */
 function parseTimeToSeconds(timeStr) {
-    timeStr = timeStr.trim();
-    const parts = timeStr.split(" ");
-    const period = parts[1].toLowerCase(); // am or pm
-    const timeParts = parts[0].split(":").map(Number);
-    let hours = timeParts[0];
-    const minutes = timeParts[1];
-    const seconds = timeParts[2];
+    timeStr = timeStr.trim().toLowerCase();
+    const spaceIdx = timeStr.lastIndexOf(" ");
+    const period   = timeStr.slice(spaceIdx + 1).trim(); // "am" or "pm"
+    const timePart = timeStr.slice(0, spaceIdx).trim();
+    const [h, m, s] = timePart.split(":").map(Number);
 
+    let hours = h;
     if (period === "am") {
-        if (hours === 12) hours = 0;
+        if (hours === 12) hours = 0;      // 12:xx am  → 0 h
     } else {
-        if (hours !== 12) hours += 12;
+        if (hours !== 12) hours += 12;    // 1–11 pm → 13–23; 12 pm stays 12
     }
 
-    return hours * 3600 + minutes * 60 + seconds;
+    return hours * 3600 + m * 60 + s;
 }
 
-// Helper: parse "h:mm:ss" or "hhh:mm:ss" to total seconds
+/**
+ * Parse "h:mm:ss" or "hhh:mm:ss" into total seconds.
+ */
 function parseDurationToSeconds(durationStr) {
     const parts = durationStr.trim().split(":").map(Number);
     return parts[0] * 3600 + parts[1] * 60 + parts[2];
 }
 
-// Helper: format total seconds to "h:mm:ss"
+/**
+ * Format total seconds → "h:mm:ss"  (hours not zero-padded).
+ */
 function formatDuration(totalSeconds) {
+    totalSeconds = Math.max(0, Math.round(totalSeconds));
     const h = Math.floor(totalSeconds / 3600);
     const m = Math.floor((totalSeconds % 3600) / 60);
     const s = totalSeconds % 60;
     return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-// Helper: format total seconds to "hhh:mm:ss" (padded to at least 3 digits for hours? no - just no padding needed)
-function formatDurationLong(totalSeconds) {
-    const h = Math.floor(totalSeconds / 3600);
-    const m = Math.floor((totalSeconds % 3600) / 60);
-    const s = totalSeconds % 60;
-    return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+// Same logic – used where "hhh:mm:ss" format is expected (hours can be large)
+const formatDurationLong = formatDuration;
+
+/**
+ * Read a text file and return non-empty, trimmed lines.
+ * Returns [] if the file does not exist.
+ */
+function readLines(filePath) {
+    try {
+        return fs.readFileSync(filePath, { encoding: "utf8" })
+            .split("\n")
+            .filter(l => l.trim() !== "");
+    } catch (e) {
+        return [];
+    }
+}
+
+/**
+ * Split a comma-separated line into trimmed fields.
+ */
+function parseLine(line) {
+    return line.split(",").map(c => c.trim());
+}
+
+/**
+ * Return true if dateStr (yyyy-mm-dd) falls in the
+ * Eid al-Fitr 2025 period: April 10–30, 2025.
+ * String-based check avoids timezone issues.
+ */
+function isEidPeriod(dateStr) {
+    const [year, month, day] = dateStr.split("-").map(Number);
+    return year === 2025 && month === 4 && day >= 10 && day <= 30;
+}
+
+/**
+ * Return the English day-of-week name for a date string (yyyy-mm-dd).
+ * Uses UTC to avoid DST / timezone shifts.
+ */
+function getDayName(dateStr) {
+    const [year, month, day] = dateStr.split("-").map(Number);
+    const d = new Date(Date.UTC(year, month - 1, day));
+    return ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"][d.getUTCDay()];
+}
+
+const NORMAL_QUOTA_SEC = 8 * 3600 + 24 * 60;  // 8 h 24 min
+const EID_QUOTA_SEC    = 6 * 3600;             // 6 h
+
+function quotaForDate(dateStr) {
+    return isEidPeriod(dateStr) ? EID_QUOTA_SEC : NORMAL_QUOTA_SEC;
 }
 // ============================================================
 // Function 1: getShiftDuration(startTime, endTime)
@@ -48,10 +98,10 @@ function formatDurationLong(totalSeconds) {
 // ============================================================
 function getShiftDuration(startTime, endTime) {
     const startSec = parseTimeToSeconds(startTime);
-    const endSec = parseTimeToSeconds(endTime);
-    const diff = endSec - startSec;
-    return formatDuration(diff);
+    const endSec   = parseTimeToSeconds(endTime);
+    return formatDuration(endSec - startSec);
 }
+
 // ============================================================
 // Function 2: getIdleTime(startTime, endTime)
 // startTime: (typeof string) formatted as hh:mm:ss am or hh:mm:ss pm
